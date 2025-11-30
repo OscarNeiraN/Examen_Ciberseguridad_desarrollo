@@ -1,0 +1,4 @@
+Flask==2.3.3
+Werkzeug==2.3.7
+bandit==1.7.5
+safety==2.3.5
