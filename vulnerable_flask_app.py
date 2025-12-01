@@ -4,12 +4,10 @@ import os
 import hashlib
 from functools import wraps
 
-# Librerías de seguridad requeridas
+# Librerías de seguridad requeridas para las 4 vulnerabilidades del cuadro
 from markupsafe import escape
 from flask_talisman import Talisman
 from flask_wtf.csrf import CSRFProtect, generate_csrf
-# Se elimina la dependencia de werkzeug.security para hashing,
-# ya que ZAP no reportó debilidad en el hashing actual.
 
 # Decorador para exigir login
 def login_required(f):
@@ -40,7 +38,7 @@ Talisman(
         'script-src': ["'self'"],
         'frame-ancestors': ["'none'"] # Equivalente a X-Frame-Options: DENY
     },
-    # 4. CORRECCIÓN (CWE-614): Aplica HttpOnly y Secure a las cookies de sesión (Weak Session Management)
+    # 4. CORRECCIÓN (CWE-614): Aplica HttpOnly y Secure a las cookies de sesión
     session_cookie_secure=True, 
     session_cookie_httponly=True
 )
@@ -59,14 +57,14 @@ def get_db_connection():
     return conn
 
 
-# Se mantiene la función de hash original solicitada por el usuario
+# Se mantiene la función de hash original solicitada
 def hash_password(password):
     return hashlib.sha256(password.encode()).hexdigest()
 
 
 @app.before_request
 def set_secure_cookie_attributes():
-    # 4. CORRECCIÓN (CWE-614): Cookie SameSite (Weak Session Management)
+    # 4. CORRECCIÓN (CWE-614): Cookie SameSite
     app.config.update(
         SESSION_COOKIE_SAMESITE='Lax'
     )
@@ -103,12 +101,12 @@ def login():
 
         conn = get_db_connection()
         
-        # --- REVERTIDO: Se regresa a la lógica de verificación de contraseña original ---
+        # --- LÓGICA ORIGINAL (Inyección SQL / Debug NO MODIFICADOS) ---
         query = "SELECT * FROM users WHERE username = ? AND password = ?"
         hashed_password = hash_password(password)
         user = conn.execute(query, (username, hashed_password)).fetchone()
         conn.close()
-        # --------------------------------------------------------------------------------
+        # ---------------------------------------------------------------
         
         if user:
             session['user_id'] = user['id']
@@ -186,15 +184,13 @@ def dashboard():
     ).fetchall()
     conn.close()
 
-    # 3. CORRECCIÓN (CWE-352): Se usa g.csrf_token (guardado por @login_required)
+    # 3. CORRECCIÓN (CWE-352): Se usa g.csrf_token
     csrf_token = g.csrf_token
     
+    # 2. CORRECCIÓN (CWE-79): Cross-Site Scripting (XSS)
     # Renderizar los comentarios de forma segura
     comment_list_items = ""
     for comment in comments:
-        # 2. CORRECCIÓN (CWE-79): Cross-Site Scripting (XSS)
-        # Se usa 'escape' de markupsafe para asegurar que el contenido generado
-        # por el usuario (comment['comment']) se renderice como texto plano.
         safe_comment = escape(comment['comment'])
         comment_list_items += f'<li class="list-group-item">{safe_comment}</li>'
 
@@ -231,7 +227,7 @@ def dashboard():
 
 @app.route('/submit_comment', methods=['POST'])
 @login_required
-# 3. CORRECCIÓN (CWE-352): CSRFProtect verifica automáticamente el token en todos los POSTs
+# 3. CORRECCIÓN (CWE-352): CSRFProtect verifica automáticamente
 def submit_comment():
     comment = request.form['comment']
     user_id = session['user_id']
@@ -272,6 +268,7 @@ def admin():
 
 
 if __name__ == '__main__':
-    # --- REVERTIDO: Se regresa a la configuración de ejecución original ---
-    app.run(host="127.0.0.1", port=5000)
-    # ---------------------------------------------------------------------
+    # --- CORRECCIÓN DE RED (OBLIGATORIA PARA DOCKER/ZAP) ---
+    # Usamos 0.0.0.0 para que el contenedor acepte conexiones externas (ZAP).
+    # Mantenemos debug desactivado o como venía en tu código.
+    app.run(host="0.0.0.0", port=5000)
