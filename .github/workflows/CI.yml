@@ -21,7 +21,7 @@ jobs:
         image: docker:dind # Imagen temporal para pasar el pull.
         options: --name flask-app-dast-container
         ports:
-          - 5000:5000 
+          - 5000:5000 # Mapeamos 5000 del contenedor al puerto 5000 del host
         
     steps:
       - name: Checkout del código
@@ -65,27 +65,15 @@ jobs:
 
       - name: Escaneo Dinámico de OWASP ZAP (DAST)
         # --- CORRECCIÓN DE RESOLUCIÓN DE NOMBRE (flask_app) ---
-        # Añadimos la opción 'network: host' para que la acción de ZAP
-        # se ejecute en el mismo contexto de red que el servicio flask_app.
-        # Esto permite que ZAP resuelva el nombre 'flask_app'.
+        # El mapeo de puertos ('ports: 5000:5000') hace que la app sea accesible 
+        # en el localhost del runner. Cambiamos el target a localhost para evitar 
+        # fallos de resolución DNS del nombre del servicio 'flask_app'.
         uses: zaproxy/action-baseline@v0.12.0
         with:
-          target: 'http://flask_app:5000'
+          target: 'http://localhost:5000' # <-- Cambio clave
           fail_action: true
           allow_issue_writing: true
-          # Se omite 'network: host' porque la acción lo hace internamente,
-          # pero la salida muestra que ZAP intenta usar network=host sin la red de GH.
-          # Vamos a probar la URL con 'localhost' si 'flask_app' sigue fallando
-          # o asegurarnos de que la acción de ZAP use la red correcta.
-
-          # Nota: En muchos runners de GitHub Actions, la forma más fiable de que
-          # un step 'use' vea un 'service' es a través del network alias.
-          # Si el error persiste, la causa es el argumento network=host
-          # que la acción ZAP está aplicando internamente, impidiendo la resolución
-          # del nombre del servicio.
-          
-          # La siguiente es la corrección más común: usar el alias.
-          network: host # <-- Habilitamos el acceso de red para el escaneo ZAP
+          # Se elimina la opción 'network: host' que generaba la advertencia.
           
       # El servicio de contenedor se limpia automáticamente al finalizar el Job.
         
