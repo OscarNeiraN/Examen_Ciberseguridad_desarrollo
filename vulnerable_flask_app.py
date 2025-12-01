@@ -2,9 +2,9 @@ from flask import Flask, request, render_template_string, session, redirect, url
 import sqlite3
 import os
 import hashlib
-from functools import wraps  # Se importa para el decorador login_required
+from functools import wraps
 
-
+# Decorador para exigir login
 def login_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
@@ -22,7 +22,7 @@ def get_db_connection():
     conn = sqlite3.connect('example.db', check_same_thread=False)
     conn.row_factory = sqlite3.Row
 
-    # Protección adicional para evitar falsos positivos de SQL Injection
+    # Mejoras de seguridad (evitan falsos positivos de ZAP)
     conn.execute("PRAGMA foreign_keys = ON;")
     conn.execute("PRAGMA trusted_schema = OFF;")
     conn.execute("PRAGMA journal_mode = WAL;")
@@ -42,7 +42,7 @@ def index():
         <html lang="en">
         <head>
             <meta charset="utf-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+            <meta name="viewport" content="width=device-width, initial-scale=1">
             <link href="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/css/bootstrap.min.css" rel="stylesheet">
             <title>Welcome</title>
         </head>
@@ -66,7 +66,7 @@ def login():
 
         query = "SELECT * FROM users WHERE username = ? AND password = ?"
         hashed_password = hash_password(password)
-        
+
         user = conn.execute(query, (username, hashed_password)).fetchone()
         conn.close()
 
@@ -80,14 +80,14 @@ def login():
                 <html lang="en">
                 <head>
                     <meta charset="utf-8">
-                    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+                    <meta name="viewport" content="width=device-width, initial-scale=1">
                     <link href="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/css/bootstrap.min.css" rel="stylesheet">
                     <title>Login</title>
                 </head>
                 <body>
                     <div class="container">
                         <h1 class="mt-5">Login</h1>
-                        <div class="alert alert-danger" role="alert">Invalid credentials!</div>
+                        <div class="alert alert-danger">Invalid credentials!</div>
                         <form method="post">
                             <div class="form-group">
                                 <label for="username">Username</label>
@@ -103,12 +103,13 @@ def login():
                 </body>
                 </html>
             ''')
+
     return render_template_string('''
         <!doctype html>
         <html lang="en">
         <head>
             <meta charset="utf-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+            <meta name="viewport" content="width=device-width, initial-scale=1">
             <link href="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/css/bootstrap.min.css" rel="stylesheet">
             <title>Login</title>
         </head>
@@ -138,7 +139,8 @@ def dashboard():
     user_id = session['user_id']
     conn = get_db_connection()
     comments = conn.execute(
-        "SELECT comment FROM comments WHERE user_id = ?", (user_id,)).fetchall()
+        "SELECT comment FROM comments WHERE user_id = ?", (user_id,)
+    ).fetchall()
     conn.close()
 
     return render_template_string('''
@@ -146,7 +148,7 @@ def dashboard():
         <html lang="en">
         <head>
             <meta charset="utf-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+            <meta name="viewport" content="width=device-width, initial-scale=1">
             <link href="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/css/bootstrap.min.css" rel="stylesheet">
             <title>Dashboard</title>
         </head>
@@ -180,7 +182,9 @@ def submit_comment():
 
     conn = get_db_connection()
     conn.execute(
-        "INSERT INTO comments (user_id, comment) VALUES (?, ?)", (user_id, comment))
+        "INSERT INTO comments (user_id, comment) VALUES (?, ?)",
+        (user_id, comment)
+    )
     conn.commit()
     conn.close()
 
@@ -198,7 +202,7 @@ def admin():
         <html lang="en">
         <head>
             <meta charset="utf-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+            <meta name="viewport" content="width=device-width, initial-scale=1">
             <link href="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/css/bootstrap.min.css" rel="stylesheet">
             <title>Admin Panel</title>
         </head>
@@ -211,5 +215,6 @@ def admin():
     ''')
 
 
+# Bandit-safe: no debug, no 0.0.0.0
 if __name__ == '__main__':
-    app.run(host="0.0.0.0", port=5000)
+    app.run(host="127.0.0.1", port=5000)
