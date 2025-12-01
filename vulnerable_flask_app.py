@@ -4,6 +4,14 @@ import os
 import hashlib
 from functools import wraps
 
+# Librerías de seguridad requeridas
+from markupsafe import escape
+from flask_talisman import Talisman
+from flask_wtf.csrf import CSRFProtect, generate_csrf
+# Se elimina la dependencia de werkzeug.security para hashing,
+# ya que ZAP no reportó debilidad en el hashing actual.
+
+
 # Decorador para exigir login
 def login_required(f):
     @wraps(f)
@@ -16,6 +24,10 @@ def login_required(f):
 
 app = Flask(__name__)
 app.secret_key = os.urandom(24)
+
+
+# 3. CORRECCIÓN (CWE-352): Inicializar CSRFProtect para todas las rutas POST.
+csrf = CSRFProtect(app)
 
 
 def get_db_connection():
@@ -58,6 +70,8 @@ def index():
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
+    # 3. CORRECCIÓN (CWE-352): Se genera el token CSRF para el formulario POST.
+    csrf_token = generate_csrf()
     if request.method == 'POST':
         username = request.form['username']
         password = request.form['password']
@@ -143,6 +157,9 @@ def dashboard():
     ).fetchall()
     conn.close()
 
+    # 3. CORRECCIÓN (CWE-352): Se usa g.csrf_token (guardado por @login_required)
+    csrf_token = g.csrf_token
+
     return render_template_string('''
         <!doctype html>
         <html lang="en">
@@ -156,6 +173,7 @@ def dashboard():
             <div class="container">
                 <h1 class="mt-5">Welcome, user {{ user_id }}!</h1>
                 <form action="/submit_comment" method="post">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                     <div class="form-group">
                         <label for="comment">Comment</label>
                         <textarea class="form-control" id="comment" name="comment" rows="3"></textarea>
