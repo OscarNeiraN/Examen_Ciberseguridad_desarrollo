@@ -1,3 +1,4 @@
+# ...existing code...
 from flask import Flask, request, render_template_string, session, redirect, url_for, g
 import sqlite3
 import os
@@ -35,14 +36,22 @@ app.config.update(
     SESSION_COOKIE_SECURE=False  # False en desarrollo, True en producción con HTTPS
 )
 
-# 1. CORRECCIÓN (CWE-693): Missing Security Headers (CSP, HSTS, X-Frame-Options)
+# 1. CORRECCIÓN (CWE-693): Content Security Policy ampliada para cubrir directivas sin fallback
 Talisman(
     app,
     content_security_policy={
+        # políticas de recursos
         'default-src': ["'self'"],
-        'style-src': ["'self'", "https://maxcdn.bootstrapcdn.com"],
         'script-src': ["'self'"],
-        'frame-ancestors': ["'none'"]
+        'style-src': ["'self'", "https://maxcdn.bootstrapcdn.com"],
+        'img-src': ["'self'", "data:"],                 # permitir imágenes embebidas si las hay
+        'font-src': ["'self'", "https://maxcdn.bootstrapcdn.com"],
+        'connect-src': ["'self'"],
+        # directivas que no hacen fallback a default-src -> deben definirse explícitamente
+        'form-action': ["'self'"],
+        'frame-ancestors': ["'none'"],
+        'base-uri': ["'self'"],
+        'object-src': ["'none'"]
     },
     force_https=False,  # False en desarrollo, True en producción
     strict_transport_security=False,  # False en desarrollo, True en producción
