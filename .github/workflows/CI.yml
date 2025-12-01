@@ -14,8 +14,7 @@ jobs:
     
     # ----------------------------------------------------------------------
     # FASE 0: PREPARACIÓN DEL SERVICIO DAST
-    # Usamos la imagen 'python:3.9-slim' para garantizar el comando 'python'
-    # funcione y para pasar el pull automático.
+    # Usamos la imagen 'python:3.9-slim' para pasar el pull automático.
     # ----------------------------------------------------------------------
     services:
       flask_app:
@@ -24,8 +23,7 @@ jobs:
         options: --name flask-app-dast-container
         ports:
           - 5000:5000 # Mapeamos 5000 del contenedor al puerto 5000 del host
-        # El comando es correcto:
-        command: python vulnerable_flask_app.py 
+        # --- CORRECCIÓN CRÍTICA: Eliminamos 'command' ya que no es compatible con el esquema de GH Actions ---
         
     steps:
       - name: Checkout del código
