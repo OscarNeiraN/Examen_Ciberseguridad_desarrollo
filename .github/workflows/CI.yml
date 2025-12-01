@@ -23,20 +23,16 @@ jobs:
         uses: actions/checkout@v3
 
       # =============================
-      # Construcción y Ejecución de la app Flask (DAST)
+      # Construcción de la app Flask
       # =============================
       - name: Build Docker App para DAST
         run: |
           docker build -t flask-app-dast-local .
 
-      # CORRECCIÓN DAST: Se elimina --network=host y se mapea el puerto 5000.
-      # Esto asegura que el host de la máquina virtual de GitHub Actions pueda
-      # acceder a la app Flask, lo cual es requerido por la acción de ZAP.
-      - name: Ejecutar APP mapeando el puerto 5000
+      - name: Ejecutar APP con network=host
         run: |
-          docker run -d -p 5000:5000 --name flask-app flask-app-dast-local
+          docker run -d --network=host --name flask-app flask-app-dast-local
 
-      # Aumentar la espera si es necesario, aunque 10 segundos es un buen inicio.
       - name: Esperar que la app inicie
         run: sleep 10
 
@@ -63,7 +59,6 @@ jobs:
       # =============================
       # DAST - OWASP ZAP
       # =============================
-      # La acción de ZAP usará la red del host para acceder al puerto 5000
       - name: Escaneo Dinámico de OWASP ZAP (DAST)
         uses: zaproxy/action-baseline@v0.14.0
         with:
@@ -76,9 +71,7 @@ jobs:
       - name: Publicar Reportes OWASP ZAP
         uses: actions/upload-artifact@v4
         with:
-          name: zap-reports
-          fail_action: false
-          allow_issue_writing: false
+          name: zap_reports
           path: |
             report_json.json
             report_md.md
@@ -89,11 +82,9 @@ jobs:
   # ======================================
   build_and_push:
     name: Construir y Subir a Docker Hub
-    # Este trabajo SÓLO se ejecuta si security_scan es exitoso
     needs: security_scan 
     runs-on: ubuntu-latest
-    # Este trabajo SÓLO se ejecuta en el branch 'main'
-    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+    if: github.ref == 'refs/heads/main'
 
     steps:
       - name: Checkout del código
