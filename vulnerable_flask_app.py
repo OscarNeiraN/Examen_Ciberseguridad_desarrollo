@@ -45,6 +45,7 @@ Talisman(
 
 
 def get_db_connection():
+    # Nota: check_same_thread=False es necesario para SQLite en Flask con múltiples threads
     conn = sqlite3.connect('example.db', check_same_thread=False)
     conn.row_factory = sqlite3.Row
 
@@ -59,6 +60,52 @@ def get_db_connection():
 
 def hash_password(password):
     return hashlib.sha256(password.encode()).hexdigest()
+
+# FUNCIÓN: Inicialización de la base de datos (reemplaza la necesidad de un script externo).
+def init_db():
+    conn = get_db_connection()
+    c = conn.cursor()
+    
+    # 1. Crear tabla de usuarios
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT UNIQUE NOT NULL,
+            password TEXT NOT NULL,
+            role TEXT DEFAULT 'user'
+        )
+    ''')
+    
+    # 2. Crear tabla de comentarios
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS comments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            comment TEXT NOT NULL,
+            FOREIGN KEY (user_id) REFERENCES users (id)
+        )
+    ''')
+
+    # 3. Insertar usuarios por defecto ('admin' y 'user') si no existen
+    admin_username = 'admin'
+    user_username = 'user'
+    default_password_hash = hash_password('password') # user: password
+    
+    # Insertar 'admin' si no existe
+    if not conn.execute("SELECT id FROM users WHERE username = ?", (admin_username,)).fetchone():
+        c.execute(
+            "INSERT INTO users (username, password, role) VALUES (?, ?, ?)",
+            (admin_username, default_password_hash, 'admin')
+        )
+    # Insertar 'user' si no existe
+    if not conn.execute("SELECT id FROM users WHERE username = ?", (user_username,)).fetchone():
+        c.execute(
+            "INSERT INTO users (username, password, role) VALUES (?, ?, ?)",
+            (user_username, default_password_hash, 'user')
+        )
+    
+    conn.commit()
+    conn.close()
 
 
 @app.before_request
@@ -82,7 +129,7 @@ def index():
         <body>
             <div class="container">
                 <h1 class="mt-5">Welcome to the Secure Application!</h1>
-                <p class="lead">This is the home page. Please <a href="/login">login</a>.</p>
+                <p class="lead">This is the home page. Please <a href="/login">login</a></p>
             </div>
         </body>
         </html>
@@ -103,6 +150,7 @@ def login():
         # CORRECCIÓN SQL INJECTION (CWE-89)
         query = "SELECT * FROM users WHERE username = ? AND password = ?"
         hashed_password = hash_password(password)
+        # Se usan parámetros para prevenir la inyección SQL.
         user = conn.execute(query, (username, hashed_password)).fetchone()
         conn.close()
         
@@ -267,5 +315,9 @@ def admin():
 
 
 if __name__ == '__main__':
+    # Paso crítico: Inicializar la base de datos antes de iniciar la aplicación
+    # para asegurar que las tablas existen. Esto evita que la app muera al inicio.
+    init_db()
+    
     # CORRECCIÓN HOST/DEBUG (DAST & Bandit B104): Se usa 0.0.0.0 para Docker y # nosec para Bandit.
     app.run(host="0.0.0.0", port=5000) # nosec
