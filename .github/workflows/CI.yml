@@ -1,6 +1,5 @@
 name: Security Audit & Docker Push
 
-# Se ejecuta cada vez que haces un push a la rama main (o master)
 on:
   push:
     branches: [ "main", "master" ]
@@ -11,77 +10,62 @@ jobs:
   security_scan:
     name: Análisis de Vulnerabilidades (SAST, SCA y DAST)
     runs-on: ubuntu-latest
-    
-    # ----------------------------------------------------------------------
-    # FASE 0: PREPARACIÓN DEL SERVICIO DAST
-    # Usamos la imagen 'python:3.9-slim' para pasar el pull automático.
-    # ----------------------------------------------------------------------
-    services:
-      flask_app:
-        # --- CORRECCIÓN DE IMAGEN BASE ---
-        image: python:3.9-slim # Usamos una imagen con python instalado.
-        options: --name flask-app-dast-container
-        ports:
-          - 5000:5000 # Mapeamos 5000 del contenedor al puerto 5000 del host
-        # --- CORRECCIÓN CRÍTICA: Eliminamos 'command' ya que no es compatible con el esquema de GH Actions ---
-        
+
     steps:
+      # ------------------------------------------------------------
+      # FASE 0: Checkout
+      # ------------------------------------------------------------
       - name: Checkout del código
         uses: actions/checkout@v3
 
-      # ----------------------------------------------------------------------
-      # FASE 1: Construir y Re-etiquetar la imagen
-      # ----------------------------------------------------------------------
-      - name: Construir Imagen Docker para DAST Service (y re-etiquetar)
-        run: |
-          # 1. Construye la aplicación Flask con una etiqueta temporal
-          docker build -t flask-app-dast-local . 
-          # 2. Re-etiqueta la imagen construida con el nombre que el servicio usará.
-          # Esto garantiza que el contenido de la imagen de tu app (incluyendo 
-          # vulnerable_flask_app.py y dependencias) sobrescriba la imagen base.
-          docker tag flask-app-dast-local:latest python:3.9-slim
-          
-      # ----------------------------------------------------------------------
-      # FASE 2: SAST (Bandit) y SCA (Safety)
-      # ----------------------------------------------------------------------
+      # ------------------------------------------------------------
+      # FASE 1: Configurar Python e instalar dependencias
+      # ------------------------------------------------------------
       - name: Configurar Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.9'
 
-      - name: Instalar dependencias y herramientas de seguridad
+      - name: Instalar dependencias del proyecto y herramientas de seguridad
         run: |
           python -m pip install --upgrade pip
           pip install bandit safety
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-          
+
+      # ------------------------------------------------------------
+      # FASE 2: SCA y SAST
+      # ------------------------------------------------------------
       - name: Escaneo de Dependencias (Safety)
         run: safety check
 
       - name: Escaneo de Código Estático (Bandit)
         run: bandit -r . -ll
-        
-      # ----------------------------------------------------------------------
-      # FASE 3: DAST (OWASP ZAP)
-      # ----------------------------------------------------------------------
-      - name: Esperar 10 segundos para inicio de contenedor DAST
-        run: sleep 10
 
-      - name: Escaneo Dinámico de OWASP ZAP (DAST)
-        # El target 'http://localhost:5000' es el correcto
+      # ------------------------------------------------------------
+      # FASE 3: DAST (OWASP ZAP)
+      # ------------------------------------------------------------
+      # Iniciar la app Flask en segundo plano
+      - name: Iniciar aplicación Flask para DAST
+        run: |
+          echo "Iniciando aplicación vulnerable Flask..."
+          python vulnerable_flask_app.py &
+          sleep 8  # espera para asegurar que esté arriba
+
+      - name: Escaneo Dinámico OWASP ZAP
         uses: zaproxy/action-baseline@v0.12.0
         with:
-          target: 'http://localhost:5000'
+          target: "http://localhost:5000"
           fail_action: true
           allow_issue_writing: true
-          
-      # El servicio de contenedor se limpia automáticamente al finalizar el Job.
-        
+
+  # ------------------------------------------------------------
+  # FASE 4: Build y Push Docker
+  # ------------------------------------------------------------
   build_and_push:
     name: Construir y Subir a Docker Hub
-    needs: security_scan 
+    needs: security_scan
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' 
+    if: github.ref == 'refs/heads/main'
 
     steps:
       - name: Checkout del código
@@ -93,7 +77,7 @@ jobs:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
-      - name: Build y Push de la imagen Docker
+      - name: Build y Push imagen Docker
         uses: docker/build-push-action@v4
         with:
           context: .
