@@ -2,6 +2,17 @@ from flask import Flask, request, render_template_string, session, redirect, url
 import sqlite3
 import os
 import hashlib
+from functools import wraps # Se importa para el decorador login_required
+
+# Se añade una pequeña corrección para gestión de sesión
+def login_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if 'user_id' not in session:
+            return redirect(url_for('login'))
+        return f(*args, **kwargs)
+    return decorated_function
+
 
 app = Flask(__name__)
 app.secret_key = os.urandom(24)
@@ -46,15 +57,11 @@ def login():
 
         conn = get_db_connection()
 
-        # Inyección de SQL solo si se detecta un payload de inyección de SQL
-        if "' OR '" in password:
-            query = "SELECT * FROM users WHERE username = '{}' AND password = '{}'".format(
-                username, password)
-            user = conn.execute(query).fetchone()
-        else:
-            query = "SELECT * FROM users WHERE username = ? AND password = ?"
-            hashed_password = hash_password(password)
-            user = conn.execute(query, (username, hashed_password)).fetchone()
+        query = "SELECT * FROM users WHERE username = ? AND password = ?"
+        hashed_password = hash_password(password)
+        
+        user = conn.execute(query, (username, hashed_password)).fetchone()
+        conn.close()
 
         if user:
             session['user_id'] = user['id']
@@ -119,10 +126,8 @@ def login():
 
 
 @app.route('/dashboard')
+@login_required # Uso del decorador login_required
 def dashboard():
-    if 'user_id' not in session:
-        return redirect(url_for('login'))
-
     user_id = session['user_id']
     conn = get_db_connection()
     comments = conn.execute(
@@ -161,10 +166,8 @@ def dashboard():
 
 
 @app.route('/submit_comment', methods=['POST'])
+@login_required # Uso del decorador login_required
 def submit_comment():
-    if 'user_id' not in session:
-        return redirect(url_for('login'))
-
     comment = request.form['comment']
     user_id = session['user_id']
 
@@ -178,8 +181,9 @@ def submit_comment():
 
 
 @app.route('/admin')
+@login_required # Uso del decorador login_required
 def admin():
-    if 'user_id' not in session or session.get('role') != 'admin':
+    if session.get('role') != 'admin':
         return redirect(url_for('login'))
 
     return render_template_string('''
@@ -201,4 +205,4 @@ def admin():
 
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(debug=False)
