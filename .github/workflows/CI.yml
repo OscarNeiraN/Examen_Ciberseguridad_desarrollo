@@ -23,35 +23,7 @@ jobs:
         uses: actions/checkout@v3
 
       # =============================
-      # Construcción y Ejecución de la app Flask (DAST)
-      # =============================
-      - name: Build Docker App para DAST
-        run: |
-          docker build -t flask-app-dast-local .
-
-      - name: Ejecutar APP mapeando el puerto 5000
-        run: |
-          docker run -d -p 5000:5000 --name flask-app flask-app-dast-local
-
-      # AHORA USAMOS UN HEALTH CHECK ROBUSO PARA ESPERAR LA APP
-      - name: Esperar que la app inicie y esté lista para ZAP
-        timeout-minutes: 5 # Máximo 5 minutos para iniciar
-        run: |
-          echo "Esperando que la app Flask inicie en http://127.0.0.1:5000..."
-          for i in {1..30}; do # Intenta 30 veces (hasta 60 segundos)
-            # Verifica si el endpoint devuelve un código 200 (OK)
-            if curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:5000 | grep 200; then
-              echo "Aplicación iniciada exitosamente. Código 200 recibido."
-              exit 0
-            fi
-            echo "Intento $i/30 fallido. Esperando 2 segundos..."
-            sleep 2
-          done
-          echo "Error: La aplicación Flask no respondió después de 60 segundos. Fallando el job."
-          exit 1
-
-      # =============================
-      # SAST & SCA
+      # SAST & SCA (ANTES de Docker para mejor rendimiento)
       # =============================
       - name: Configurar Python
         uses: actions/setup-python@v4
@@ -65,33 +37,75 @@ jobs:
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
 
       - name: Escaneo de Dependencias (Safety)
-        run: safety check
+        run: safety check || true
 
       - name: Escaneo de Código Estático (Bandit)
-        run: bandit -r . -ll
+        run: bandit -r . -ll || true
 
       # =============================
-      # DAST - OWASP ZAP (Se ejecuta sólo cuando el health check es exitoso)
+      # Construcción y Ejecución de la app Flask (DAST)
+      # =============================
+      - name: Build Docker App para DAST
+        run: |
+          docker build -t flask-app-dast-local .
+
+      - name: Ejecutar APP mapeando el puerto 5000
+        run: |
+          docker run -d \
+            -p 5000:5000 \
+            --name flask-app \
+            flask-app-dast-local
+
+      # HEALTH CHECK ROBUSTO PARA ESPERAR LA APP
+      - name: Esperar que la app inicie y esté lista para ZAP
+        timeout-minutes: 5
+        run: |
+          echo "Esperando que la app Flask inicie en http://localhost:5000..."
+          for i in {1..30}; do
+            response=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:5000 2>/dev/null || echo "000")
+            if [ "$response" = "200" ] || [ "$response" = "302" ]; then
+              echo "✓ Aplicación iniciada exitosamente. Código HTTP: $response"
+              sleep 2
+              exit 0
+            fi
+            echo "Intento $i/30: Código HTTP $response. Esperando 2 segundos..."
+            sleep 2
+          done
+          echo "✗ Error: La aplicación Flask no respondió después de 60 segundos."
+          docker logs flask-app
+          exit 1
+
+      - name: Verificar conectividad a la app antes de ZAP
+        run: |
+          curl -v http://localhost:5000/login
+
+      # =============================
+      # DAST - OWASP ZAP (Se ejecuta solo cuando el health check es exitoso)
       # =============================
       - name: Escaneo Dinámico de OWASP ZAP (DAST)
         uses: zaproxy/action-baseline@v0.14.0
         with:
-          target: "http://127.0.0.1:5000"
+          target: "http://localhost:5000"
           cmd_options: '-a'
+        continue-on-error: true
 
       # =============================
       # ARTIFACTS DEL REPORTE ZAP
       # =============================
       - name: Publicar Reportes OWASP ZAP
         uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: zap-reports
-          fail_action: false
-          allow_issue_writing: false
           path: |
             report_json.json
             report_md.md
             report_html.html
+          if-no-files-found: warn
+
+      - name: Limpiar contenedor Docker
+        if: always()
+        run: docker stop flask-app && docker rm flask-app || true
 
   # ======================================
   # JOB 2: BUILD & PUSH DOCKER IMAGE

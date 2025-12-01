@@ -15,13 +15,13 @@ def login_required(f):
     def decorated_function(*args, **kwargs):
         if 'user_id' not in session:
             return redirect(url_for('login'))
-        # Se guarda el token CSRF para el template si es necesario
         g.csrf_token = generate_csrf()
         return f(*args, **kwargs)
     return decorated_function
 
 
 app = Flask(__name__)
+
 # 4. CORRECCIÓN (CWE-614): Clave secreta generada en tiempo de ejecución.
 app.secret_key = os.urandom(24)
 
@@ -31,42 +31,35 @@ csrf = CSRFProtect(app)
 # 1. CORRECCIÓN (CWE-693): Missing Security Headers (CSP, HSTS, X-Frame-Options)
 Talisman(
     app,
-    # Habilita HSTS y X-Frame-Options: SAMEORIGIN por defecto
     content_security_policy={
-        'default-src': ["'self'"], # Solo permite recursos propios
-        'style-src': ["'self'", "https://maxcdn.bootstrapcdn.com"], # Permite Bootstrap CSS
+        'default-src': ["'self'"],
+        'style-src': ["'self'", "https://maxcdn.bootstrapcdn.com"],
         'script-src': ["'self'"],
-        'frame-ancestors': ["'none'"] # Equivalente a X-Frame-Options: DENY
+        'frame-ancestors': ["'none'"]
     },
     # 4. CORRECCIÓN (CWE-614): Aplica HttpOnly y Secure a las cookies de sesión
-    session_cookie_secure=True, 
-    session_cookie_httponly=True
+    session_cookie_secure=False,  # False en desarrollo local, True en prod con HTTPS
+    session_cookie_httponly=True,
+    force_https=False  # False en desarrollo, True en producción
 )
 
 
 def get_db_connection():
-    # Nota: check_same_thread=False es necesario para SQLite en Flask con múltiples threads
     conn = sqlite3.connect('example.db', check_same_thread=False)
     conn.row_factory = sqlite3.Row
-
-    # Mejoras de seguridad (evitan falsos positivos de ZAP)
     conn.execute("PRAGMA foreign_keys = ON;")
-    conn.execute("PRAGMA trusted_schema = OFF;")
-    conn.execute("PRAGMA journal_mode = WAL;")
-    conn.execute("PRAGMA synchronous = NORMAL;")
-
     return conn
 
 
 def hash_password(password):
     return hashlib.sha256(password.encode()).hexdigest()
 
-# FUNCIÓN: Inicialización de la base de datos (reemplaza la necesidad de un script externo).
+
+# FUNCIÓN: Inicialización de la base de datos
 def init_db():
     conn = get_db_connection()
     c = conn.cursor()
     
-    # 1. Crear tabla de usuarios
     c.execute('''
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -76,7 +69,6 @@ def init_db():
         )
     ''')
     
-    # 2. Crear tabla de comentarios
     c.execute('''
         CREATE TABLE IF NOT EXISTS comments (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -86,18 +78,16 @@ def init_db():
         )
     ''')
 
-    # 3. Insertar usuarios por defecto ('admin' y 'user') si no existen
     admin_username = 'admin'
     user_username = 'user'
-    default_password_hash = hash_password('password') # user: password
+    default_password_hash = hash_password('password')
     
-    # Insertar 'admin' si no existe
     if not conn.execute("SELECT id FROM users WHERE username = ?", (admin_username,)).fetchone():
         c.execute(
             "INSERT INTO users (username, password, role) VALUES (?, ?, ?)",
             (admin_username, default_password_hash, 'admin')
         )
-    # Insertar 'user' si no existe
+    
     if not conn.execute("SELECT id FROM users WHERE username = ?", (user_username,)).fetchone():
         c.execute(
             "INSERT INTO users (username, password, role) VALUES (?, ?, ?)",
@@ -110,10 +100,10 @@ def init_db():
 
 @app.before_request
 def set_secure_cookie_attributes():
-    # 4. CORRECCIÓN (CWE-614): Cookie SameSite
     app.config.update(
         SESSION_COOKIE_SAMESITE='Lax'
     )
+
 
 @app.route('/')
 def index():
@@ -138,25 +128,24 @@ def index():
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
-    # 3. CORRECCIÓN (CWE-352): Se genera el token CSRF para el formulario POST.
     csrf_token = generate_csrf()
     
     if request.method == 'POST':
-        username = request.form['username']
-        password = request.form['password']
+        username = request.form.get('username', '')
+        password = request.form.get('password', '')
 
         conn = get_db_connection()
         
         # CORRECCIÓN SQL INJECTION (CWE-89)
         query = "SELECT * FROM users WHERE username = ? AND password = ?"
         hashed_password = hash_password(password)
-        # Se usan parámetros para prevenir la inyección SQL.
         user = conn.execute(query, (username, hashed_password)).fetchone()
         conn.close()
         
         if user:
             session['user_id'] = user['id']
             session['role'] = user['role']
+            session.permanent = True
             return redirect(url_for('dashboard'))
         else:
             return render_template_string(f'''
@@ -176,11 +165,11 @@ def login():
                             <input type="hidden" name="csrf_token" value="{csrf_token}">
                             <div class="form-group">
                                 <label for="username">Username</label>
-                                <input type="text" class="form-control" id="username" name="username">
+                                <input type="text" class="form-control" id="username" name="username" required>
                             </div>
                             <div class="form-group">
                                 <label for="password">Password</label>
-                                <input type="password" class="form-control" id="password" name="password">
+                                <input type="password" class="form-control" id="password" name="password" required>
                             </div>
                             <button type="submit" class="btn btn-primary">Login</button>
                         </form>
@@ -189,7 +178,6 @@ def login():
                 </html>
             ''')
 
-    # Template GET
     return render_template_string(f'''
         <!doctype html>
         <html lang="en">
@@ -206,11 +194,11 @@ def login():
                     <input type="hidden" name="csrf_token" value="{csrf_token}">
                     <div class="form-group">
                         <label for="username">Username</label>
-                        <input type="text" class="form-control" id="username" name="username">
+                        <input type="text" class="form-control" id="username" name="username" required>
                     </div>
                     <div class="form-group">
                         <label for="password">Password</label>
-                        <input type="password" class="form-control" id="password" name="password">
+                        <input type="password" class="form-control" id="password" name="password" required>
                     </div>
                     <button type="submit" class="btn btn-primary">Login</button>
                 </form>
@@ -230,14 +218,11 @@ def dashboard():
     ).fetchall()
     conn.close()
 
-    # 3. CORRECCIÓN (CWE-352): Se usa g.csrf_token para el formulario
     csrf_token = g.csrf_token
     
     # 2. CORRECCIÓN (CWE-79): Cross-Site Scripting (XSS)
-    # Renderizar los comentarios de forma segura usando markupsafe.escape
     comment_list_items = ""
     for comment in comments:
-        # Aquí se aplica la sanitización antes de la inyección en el HTML
         safe_comment = escape(comment['comment']) 
         comment_list_items += f'<li class="list-group-item">{safe_comment}</li>'
 
@@ -254,11 +239,10 @@ def dashboard():
             <div class="container">
                 <h1 class="mt-5">Welcome, user {user_id}!</h1>
                 <form action="/submit_comment" method="post">
-                    <!-- 3. CORRECCIÓN (CWE-352): CSRF Token -->
                     <input type="hidden" name="csrf_token" value="{csrf_token}">
                     <div class="form-group">
                         <label for="comment">Comment</label>
-                        <textarea class="form-control" id="comment" name="comment" rows="3"></textarea>
+                        <textarea class="form-control" id="comment" name="comment" rows="3" required></textarea>
                     </div>
                     <button type="submit" class="btn btn-primary">Submit Comment</button>
                 </form>
@@ -266,17 +250,17 @@ def dashboard():
                 <ul class="list-group">
                     {comment_list_items}
                 </ul>
+                <a href="/logout" class="btn btn-secondary mt-3">Logout</a>
             </div>
         </body>
         </html>
-    ''', user_id=user_id, comments=comments)
+    ''')
 
 
 @app.route('/submit_comment', methods=['POST'])
 @login_required
-# 3. CORRECCIÓN (CWE-352): CSRFProtect verifica automáticamente el token
 def submit_comment():
-    comment = request.form['comment']
+    comment = request.form.get('comment', '')
     user_id = session['user_id']
 
     conn = get_db_connection()
@@ -288,6 +272,12 @@ def submit_comment():
     conn.close()
 
     return redirect(url_for('dashboard'))
+
+
+@app.route('/logout')
+def logout():
+    session.clear()
+    return redirect(url_for('index'))
 
 
 @app.route('/admin')
@@ -315,9 +305,5 @@ def admin():
 
 
 if __name__ == '__main__':
-    # Paso crítico: Inicializar la base de datos antes de iniciar la aplicación
-    # para asegurar que las tablas existen. Esto evita que la app muera al inicio.
     init_db()
-    
-    # CORRECCIÓN HOST/DEBUG (DAST & Bandit B104): Se usa 0.0.0.0 para Docker y # nosec para Bandit.
-    app.run(host="0.0.0.0", port=5000) # nosec
+    app.run(host="0.0.0.0", port=5000)  # nosec
