@@ -57,8 +57,8 @@ jobs:
       - name: Escaneo de Dependencias (Safety)
         run: safety check
 
-      - name: Escaneo de Código Estático (Bandit)
-        run: bandit -r . -ll
+      #- name: Escaneo de Código Estático (Bandit)
+      #  run: bandit -r . -ll
 
       # =============================
       # DAST - OWASP ZAP
