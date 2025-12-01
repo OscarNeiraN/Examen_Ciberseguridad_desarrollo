@@ -28,6 +28,13 @@ app.secret_key = os.urandom(24)
 # 3. CORRECCIÓN (CWE-352): Inicializar CSRFProtect para todas las rutas POST.
 csrf = CSRFProtect(app)
 
+# Configurar cookies seguras
+app.config.update(
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE='Lax',
+    SESSION_COOKIE_SECURE=False  # False en desarrollo, True en producción con HTTPS
+)
+
 # 1. CORRECCIÓN (CWE-693): Missing Security Headers (CSP, HSTS, X-Frame-Options)
 Talisman(
     app,
@@ -37,10 +44,9 @@ Talisman(
         'script-src': ["'self'"],
         'frame-ancestors': ["'none'"]
     },
-    # 4. CORRECCIÓN (CWE-614): Aplica HttpOnly y Secure a las cookies de sesión
-    session_cookie_secure=False,  # False en desarrollo local, True en prod con HTTPS
-    session_cookie_httponly=True,
-    force_https=False  # False en desarrollo, True en producción
+    force_https=False,  # False en desarrollo, True en producción
+    strict_transport_security=False,  # False en desarrollo, True en producción
+    strict_transport_security_max_age=31536000
 )
 
 
@@ -96,13 +102,6 @@ def init_db():
     
     conn.commit()
     conn.close()
-
-
-@app.before_request
-def set_secure_cookie_attributes():
-    app.config.update(
-        SESSION_COOKIE_SAMESITE='Lax'
-    )
 
 
 @app.route('/')
