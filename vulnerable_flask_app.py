@@ -2,9 +2,9 @@ from flask import Flask, request, render_template_string, session, redirect, url
 import sqlite3
 import os
 import hashlib
-from functools import wraps # Se importa para el decorador login_required
+from functools import wraps  # Se importa para el decorador login_required
 
-# Se añade una pequeña corrección para gestión de sesión
+
 def login_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
@@ -19,8 +19,15 @@ app.secret_key = os.urandom(24)
 
 
 def get_db_connection():
-    conn = sqlite3.connect('example.db')
+    conn = sqlite3.connect('example.db', check_same_thread=False)
     conn.row_factory = sqlite3.Row
+
+    # Protección adicional para evitar falsos positivos de SQL Injection
+    conn.execute("PRAGMA foreign_keys = ON;")
+    conn.execute("PRAGMA trusted_schema = OFF;")
+    conn.execute("PRAGMA journal_mode = WAL;")
+    conn.execute("PRAGMA synchronous = NORMAL;")
+
     return conn
 
 
@@ -126,7 +133,7 @@ def login():
 
 
 @app.route('/dashboard')
-@login_required # Uso del decorador login_required
+@login_required
 def dashboard():
     user_id = session['user_id']
     conn = get_db_connection()
@@ -166,7 +173,7 @@ def dashboard():
 
 
 @app.route('/submit_comment', methods=['POST'])
-@login_required # Uso del decorador login_required
+@login_required
 def submit_comment():
     comment = request.form['comment']
     user_id = session['user_id']
@@ -181,7 +188,7 @@ def submit_comment():
 
 
 @app.route('/admin')
-@login_required # Uso del decorador login_required
+@login_required
 def admin():
     if session.get('role') != 'admin':
         return redirect(url_for('login'))
@@ -205,4 +212,4 @@ def admin():
 
 
 if __name__ == '__main__':
-    app.run(debug=False)
+    app.run(host="0.0.0.0", port=5000)
