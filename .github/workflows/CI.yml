@@ -71,7 +71,9 @@ jobs:
       - name: Publicar Reportes OWASP ZAP
         uses: actions/upload-artifact@v4
         with:
-          name: zap_reports
+          name: zap-reports
+          fail_action: false
+          allow_issue_writing: false
           path: |
             report_json.json
             report_md.md
