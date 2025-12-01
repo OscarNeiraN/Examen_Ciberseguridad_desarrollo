@@ -14,12 +14,11 @@ jobs:
     
     # ----------------------------------------------------------------------
     # FASE 0: PREPARACIÓN DEL SERVICIO DAST
-    # Usamos una imagen que sabemos que SIEMPRE está disponible localmente
-    # para que el 'pull' inicial (automático) pase sin errores de acceso.
+    # Usamos la imagen 'docker:dind' para pasar el pull automático.
     # ----------------------------------------------------------------------
     services:
       flask_app:
-        image: docker:dind # Usamos la imagen docker-in-docker, que es común y pasa el pull.
+        image: docker:dind # Imagen temporal para pasar el pull.
         options: --name flask-app-dast-container
         ports:
           - 5000:5000 
@@ -36,12 +35,10 @@ jobs:
           # 1. Construye la aplicación Flask con una etiqueta temporal
           docker build -t flask-app-dast-local . 
           # 2. Re-etiqueta la imagen construida con el nombre que el servicio 'docker:dind' usará.
-          # Esto es un workaround para el 'pull' automático de services.
           docker tag flask-app-dast-local:latest docker:dind
           
       # ----------------------------------------------------------------------
       # FASE 2: SAST (Bandit) y SCA (Safety)
-      # Analizan el código y las dependencias sin ejecutar la app
       # ----------------------------------------------------------------------
       - name: Configurar Python
         uses: actions/setup-python@v4
@@ -62,24 +59,39 @@ jobs:
         
       # ----------------------------------------------------------------------
       # FASE 3: DAST (OWASP ZAP)
-      # Ataca la aplicación corriendo en el servicio.
       # ----------------------------------------------------------------------
       - name: Esperar 10 segundos para inicio de contenedor DAST
         run: sleep 10
 
       - name: Escaneo Dinámico de OWASP ZAP (DAST)
+        # --- CORRECCIÓN DE RESOLUCIÓN DE NOMBRE (flask_app) ---
+        # Añadimos la opción 'network: host' para que la acción de ZAP
+        # se ejecute en el mismo contexto de red que el servicio flask_app.
+        # Esto permite que ZAP resuelva el nombre 'flask_app'.
         uses: zaproxy/action-baseline@v0.12.0
         with:
-          # Para acceder al servicio de contenedor, usamos el nombre del servicio (flask_app) y su puerto interno (5000)
           target: 'http://flask_app:5000'
           fail_action: true
           allow_issue_writing: true
+          # Se omite 'network: host' porque la acción lo hace internamente,
+          # pero la salida muestra que ZAP intenta usar network=host sin la red de GH.
+          # Vamos a probar la URL con 'localhost' si 'flask_app' sigue fallando
+          # o asegurarnos de que la acción de ZAP use la red correcta.
+
+          # Nota: En muchos runners de GitHub Actions, la forma más fiable de que
+          # un step 'use' vea un 'service' es a través del network alias.
+          # Si el error persiste, la causa es el argumento network=host
+          # que la acción ZAP está aplicando internamente, impidiendo la resolución
+          # del nombre del servicio.
+          
+          # La siguiente es la corrección más común: usar el alias.
+          network: host # <-- Habilitamos el acceso de red para el escaneo ZAP
           
       # El servicio de contenedor se limpia automáticamente al finalizar el Job.
         
   build_and_push:
     name: Construir y Subir a Docker Hub
-    needs: security_scan # Solo corre si TODOS los escaneos pasan
+    needs: security_scan 
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main' 
 
