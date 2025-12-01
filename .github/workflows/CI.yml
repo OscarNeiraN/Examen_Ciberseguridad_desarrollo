@@ -75,7 +75,7 @@ jobs:
       # ARTIFACTS DEL REPORTE ZAP
       # =============================
       - name: Publicar Reportes OWASP ZAP
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: zap_reports
           path: |
