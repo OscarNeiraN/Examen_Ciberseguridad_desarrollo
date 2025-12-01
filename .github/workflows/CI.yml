@@ -14,15 +14,17 @@ jobs:
     
     # ----------------------------------------------------------------------
     # FASE 0: PREPARACIÓN DEL SERVICIO DAST
-    # Usamos la imagen 'docker:dind' para pasar el pull automático.
+    # Usamos la imagen 'python:3.9-slim' para garantizar el comando 'python'
+    # funcione y para pasar el pull automático.
     # ----------------------------------------------------------------------
     services:
       flask_app:
-        image: docker:dind # Imagen temporal para pasar el pull.
+        # --- CORRECCIÓN DE IMAGEN BASE ---
+        image: python:3.9-slim # Usamos una imagen con python instalado.
         options: --name flask-app-dast-container
         ports:
           - 5000:5000 # Mapeamos 5000 del contenedor al puerto 5000 del host
-        # --- CORRECCIÓN CRÍTICA FINAL: Usar el nombre de archivo correcto ---
+        # El comando es correcto:
         command: python vulnerable_flask_app.py 
         
     steps:
@@ -36,8 +38,10 @@ jobs:
         run: |
           # 1. Construye la aplicación Flask con una etiqueta temporal
           docker build -t flask-app-dast-local . 
-          # 2. Re-etiqueta la imagen construida con el nombre que el servicio 'docker:dind' usará.
-          docker tag flask-app-dast-local:latest docker:dind
+          # 2. Re-etiqueta la imagen construida con el nombre que el servicio usará.
+          # Esto garantiza que el contenido de la imagen de tu app (incluyendo 
+          # vulnerable_flask_app.py y dependencias) sobrescriba la imagen base.
+          docker tag flask-app-dast-local:latest python:3.9-slim
           
       # ----------------------------------------------------------------------
       # FASE 2: SAST (Bandit) y SCA (Safety)
