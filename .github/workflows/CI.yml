@@ -22,6 +22,8 @@ jobs:
         options: --name flask-app-dast-container
         ports:
           - 5000:5000 # Mapeamos 5000 del contenedor al puerto 5000 del host
+        # --- CORRECCIÓN CRÍTICA FINAL: Usar el nombre de archivo correcto ---
+        command: python vulnerable_flask_app.py 
         
     steps:
       - name: Checkout del código
@@ -64,16 +66,12 @@ jobs:
         run: sleep 10
 
       - name: Escaneo Dinámico de OWASP ZAP (DAST)
-        # --- CORRECCIÓN DE RESOLUCIÓN DE NOMBRE (flask_app) ---
-        # El mapeo de puertos ('ports: 5000:5000') hace que la app sea accesible 
-        # en el localhost del runner. Cambiamos el target a localhost para evitar 
-        # fallos de resolución DNS del nombre del servicio 'flask_app'.
+        # El target 'http://localhost:5000' es el correcto
         uses: zaproxy/action-baseline@v0.12.0
         with:
-          target: 'http://localhost:5000' # <-- Cambio clave
+          target: 'http://localhost:5000'
           fail_action: true
           allow_issue_writing: true
-          # Se elimina la opción 'network: host' que generaba la advertencia.
           
       # El servicio de contenedor se limpia automáticamente al finalizar el Job.
         
