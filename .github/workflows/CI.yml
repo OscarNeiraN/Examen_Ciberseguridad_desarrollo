@@ -15,39 +15,23 @@ jobs:
     name: Análisis de Vulnerabilidades (SAST, SCA y DAST)
     runs-on: ubuntu-latest
 
-    services:
-      flask_app:
-        image: python:3.9-slim
-        options: --name flask-app-dast-container
-        ports:
-          - 5000:5000
-
     steps:
       # =============================
       # CHECKOUT
       # =============================
       - name: Checkout del código
-        uses: actions/checkout@v4
+        uses: actions/checkout@v3
 
       # =============================
-      # FIX PERMISOS (REQUIRED)
+      # Construcción de la app Flask
       # =============================
-      - name: Fix workspace permissions
-        run: sudo chmod -R 777 ${{ github.workspace }}
-
-      # =============================
-      # DOCKER APP PARA DAST
-      # =============================
-      - name: Construir Imagen Docker para DAST Service
+      - name: Build Docker App para DAST
         run: |
           docker build -t flask-app-dast-local .
-          docker tag flask-app-dast-local:latest python:3.9-slim
 
-      # =============================
-      # LEVANTAR APP (OWASP ZAP necesita acceso)
-      # =============================
-      - name: Levantar aplicación para DAST
-        run: docker run -d -p 5000:5000 flask-app-dast-local
+      - name: Ejecutar APP con network=host
+        run: |
+          docker run -d --network=host --name flask-app flask-app-dast-local
 
       - name: Esperar que la app inicie
         run: sleep 10
@@ -78,13 +62,12 @@ jobs:
       - name: Escaneo Dinámico de OWASP ZAP (DAST)
         uses: zaproxy/action-baseline@v0.12.0
         with:
-          target: "http://flask_app:5000"
+          target: "http://127.0.0.1:5000"
           fail_action: false
           allow_issue_writing: false
-          artifact_name: zap_reports
 
       # =============================
-      # PUBLICACIÓN DE REPORTES
+      # ARTIFACTS DEL REPORTE ZAP
       # =============================
       - name: Publicar Reportes OWASP ZAP
         uses: actions/upload-artifact@v4
@@ -95,18 +78,18 @@ jobs:
             report_md.md
             report_html.html
 
-  # ===================================================
-  # JOB 2: BUILD & PUSH DOCKER IMAGE (SOLO MAIN)
-  # ===================================================
+  # ======================================
+  # JOB 2: BUILD & PUSH DOCKER IMAGE
+  # ======================================
   build_and_push:
     name: Construir y Subir a Docker Hub
     needs: security_scan 
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' 
+    if: github.ref == 'refs/heads/main'
 
     steps:
       - name: Checkout del código
-        uses: actions/checkout@v4
+        uses: actions/checkout@v3
 
       - name: Login en Docker Hub
         uses: docker/login-action@v2
