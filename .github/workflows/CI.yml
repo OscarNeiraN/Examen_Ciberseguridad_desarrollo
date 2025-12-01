@@ -12,12 +12,38 @@ jobs:
     name: Análisis de Vulnerabilidades (SAST, SCA y DAST)
     runs-on: ubuntu-latest
     
+    # ----------------------------------------------------------------------
+    # FASE 0: PREPARACIÓN DEL SERVICIO DAST
+    # Se utiliza un servicio Docker para tener la aplicación Flask corriendo
+    # mientras ZAP realiza el escaneo.
+    # ----------------------------------------------------------------------
+    services:
+      # Definimos el contenedor de la aplicación Flask
+      flask_app:
+        # Usamos un tag temporal que coincida con el que construiremos
+        image: local-flask-temp:latest 
+        options: --name flask-app-dast
+        ports:
+          - 5000:5000 # Mapeamos el puerto 5000 para el escaneo ZAP
+        
     steps:
       - name: Checkout del código
         uses: actions/checkout@v3
 
+      - name: Configurar Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        
       # ----------------------------------------------------------------------
-      # FASE 1: SAST (Bandit) y SCA (Safety)
+      # FASE 1: Construir la imagen y etiquetarla para el servicio
+      # ----------------------------------------------------------------------
+      - name: Construir Imagen Docker para DAST Service
+        # --- CORRECCIÓN ---
+        # Construimos la imagen con el tag 'local-flask-temp:latest' que
+        # coincide exactamente con el 'image' definido en 'services'
+        run: docker build -t local-flask-temp:latest . 
+
+      # ----------------------------------------------------------------------
+      # FASE 2: SAST (Bandit) y SCA (Safety)
       # Analizan el código y las dependencias sin ejecutar la app
       # ----------------------------------------------------------------------
       - name: Configurar Python
@@ -29,60 +55,32 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install bandit safety
-          # Las dependencias de la app son necesarias para simular el entorno
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
           
       - name: Escaneo de Dependencias (Safety)
-        # Falla si encuentra CVEs en librerías. (SCA)
         run: safety check
 
       - name: Escaneo de Código Estático (Bandit)
-        # Falla si encuentra SQLi o debug=True. (SAST)
         run: bandit -r . -ll
         
       # ----------------------------------------------------------------------
-      # FASE 2: DAST (OWASP ZAP)
-      # Analiza la aplicación en tiempo de ejecución
+      # FASE 3: DAST (OWASP ZAP)
+      # Ataca la aplicación corriendo en el servicio.
       # ----------------------------------------------------------------------
-      
-      - name: Configurar Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Construir Imagen Docker (para DAST)
-        uses: docker/build-push-action@v4
-        with:
-          context: .
-          push: false
-          tags: local/flask-app:latest
-
-      - name: Ejecutar la aplicación vulnerable en Docker
-        # Correr el contenedor en modo background. Usamos network: host para accesibilidad simple.
-        run: |
-          docker run -d --name flask-app-test -p 5000:5000 local/flask-app:latest
-          # Esperar un momento para que la aplicación esté lista (ej. 10 segundos)
-          echo "Esperando 10 segundos a que la app Flask se inicie..."
-          sleep 10
-          
       - name: Escaneo Dinámico de OWASP ZAP (DAST)
-        # Usa el action de ZAP para escanear la app corriendo
         uses: zaproxy/action-baseline@v0.12.0
         with:
-          # La app se ejecuta en el contenedor que escucha en localhost:5000
-          target: 'http://host.docker.internal:5000'
-          # Fallar si encuentra vulnerabilidades de Alta o Media severidad
+          # Para acceder al servicio de contenedor, usamos el nombre del servicio (flask_app) y su puerto interno (5000)
+          target: 'http://flask_app:5000'
           fail_action: true
           allow_issue_writing: true
-          # ZAP detectará la falta de protección CSRF, las cabeceras faltantes, etc.
           
-      - name: Detener y Limpiar Contenedor
-        if: always() # Garantizar que se detiene incluso si los pasos anteriores fallan
-        run: docker stop flask-app-test && docker rm flask-app-test
+      # El servicio de contenedor se limpia automáticamente al finalizar el Job.
         
   build_and_push:
     name: Construir y Subir a Docker Hub
-    needs: security_scan # Solo corre si TODOS los escaneos pasan (SAST, SCA y DAST)
+    needs: security_scan # Solo corre si TODOS los escaneos pasan
     runs-on: ubuntu-latest
-    # Asegúrate de usar la variable de entorno correcta para el usuario de Docker Hub
     if: github.ref == 'refs/heads/main' 
 
     steps:
@@ -100,4 +98,4 @@ jobs:
         with:
           context: .
           push: true
-          tags: ${{ secrets.DOCKER_USERNAME }}/app_examen:lates
+          tags: ${{ secrets.DOCKER_USERNAME }}/app_examen:latest
