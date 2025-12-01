@@ -1,5 +1,10 @@
 name: Security Audit & Docker Push
 
+# Permisos requeridos si quieres permitir creación de issues (aquí está apagado)
+permissions:
+  contents: read
+  issues: write
+  
 on:
   push:
     branches: [ "main", "master" ]
@@ -11,71 +16,81 @@ jobs:
     name: Análisis de Vulnerabilidades (SAST, SCA y DAST)
     runs-on: ubuntu-latest
 
+    services:
+      flask_app:
+        image: python:3.9-slim
+        options: --name flask-app-dast-container
+        ports:
+          - 5000:5000
+
     steps:
-      # ------------------------------------------------------------
-      # FASE 0: Checkout
-      # ------------------------------------------------------------
+      # =============================
+      # CHECKOUT
+      # =============================
       - name: Checkout del código
         uses: actions/checkout@v3
 
-      # ------------------------------------------------------------
-      # FASE 1: Configurar Python e instalar dependencias
-      # ------------------------------------------------------------
+      # =============================
+      # DOCKER APP PARA DAST
+      # =============================
+      - name: Construir Imagen Docker para DAST Service (y re-etiquetar)
+        run: |
+          docker build -t flask-app-dast-local .
+          docker tag flask-app-dast-local:latest python:3.9-slim
+
+      # =============================
+      # SAST & SCA
+      # =============================
       - name: Configurar Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.9'
 
-      - name: Instalar dependencias del proyecto y herramientas de seguridad
+      - name: Instalar dependencias y herramientas de seguridad
         run: |
           python -m pip install --upgrade pip
           pip install bandit safety
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
 
-      # ------------------------------------------------------------
-      # FASE 2: SCA y SAST
-      # ------------------------------------------------------------
       - name: Escaneo de Dependencias (Safety)
         run: safety check
 
       - name: Escaneo de Código Estático (Bandit)
         run: bandit -r . -ll
 
-      # ------------------------------------------------------------
-      # FASE 3: DAST (OWASP ZAP)
-      # ------------------------------------------------------------
-      # Iniciar la app Flask en segundo plano
-      - name: Iniciar aplicación Flask para DAST
-        run: |
-          echo "Iniciando aplicación vulnerable Flask..."
-          python vulnerable_flask_app.py &
-          sleep 8  # espera para asegurar que esté arriba
+      # =============================
+      # DAST - OWASP ZAP
+      # =============================
+      - name: Esperar que la app inicie
+        run: sleep 10
 
-      - name: Escaneo Dinámico OWASP ZAP
+      - name: Escaneo Dinámico de OWASP ZAP (DAST)
         uses: zaproxy/action-baseline@v0.12.0
         with:
           target: "http://localhost:5000"
-          fail_action: false
-          allow_issue_writing: false
-      
-      - name: Publicar Reporte OWASP ZAP
+          fail_action: false          # No fallar el pipeline si hay alertas
+          allow_issue_writing: false   # No intentar crear Issues en GitHub
+
+      # =============================
+      # ARTIFACTS DEL REPORTE ZAP
+      # =============================
+      - name: Publicar Reportes OWASP ZAP
         uses: actions/upload-artifact@v3
         with:
-          name: zap-reports
+          name: zap_reports
           path: |
             report_json.json
             report_md.md
             report_html.html
 
-            
-  # ------------------------------------------------------------
-  # FASE 4: Build y Push Docker
-  # ------------------------------------------------------------
+  # ===================================================
+  # JOB 2: BUILD & PUSH DOCKER IMAGE (SOLO MAIN)
+  # ===================================================
   build_and_push:
     name: Construir y Subir a Docker Hub
-    needs: security_scan
+    needs: security_scan 
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' 
 
     steps:
       - name: Checkout del código
@@ -87,7 +102,7 @@ jobs:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
-      - name: Build y Push imagen Docker
+      - name: Build y Push de la imagen Docker
         uses: docker/build-push-action@v4
         with:
           context: .
