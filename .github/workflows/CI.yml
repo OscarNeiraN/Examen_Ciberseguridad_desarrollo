@@ -1,10 +1,9 @@
 name: Security Audit & Docker Push
 
-# Permisos requeridos si quieres permitir creación de issues (aquí está apagado)
 permissions:
   contents: read
   issues: write
-  
+
 on:
   push:
     branches: [ "main", "master" ]
@@ -28,15 +27,30 @@ jobs:
       # CHECKOUT
       # =============================
       - name: Checkout del código
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
+
+      # =============================
+      # FIX PERMISOS (REQUIRED)
+      # =============================
+      - name: Fix workspace permissions
+        run: sudo chmod -R 777 ${{ github.workspace }}
 
       # =============================
       # DOCKER APP PARA DAST
       # =============================
-      - name: Construir Imagen Docker para DAST Service (y re-etiquetar)
+      - name: Construir Imagen Docker para DAST Service
         run: |
           docker build -t flask-app-dast-local .
           docker tag flask-app-dast-local:latest python:3.9-slim
+
+      # =============================
+      # LEVANTAR APP (OWASP ZAP necesita acceso)
+      # =============================
+      - name: Levantar aplicación para DAST
+        run: docker run -d -p 5000:5000 flask-app-dast-local
+
+      - name: Esperar que la app inicie
+        run: sleep 10
 
       # =============================
       # SAST & SCA
@@ -61,18 +75,16 @@ jobs:
       # =============================
       # DAST - OWASP ZAP
       # =============================
-      - name: Esperar que la app inicie
-        run: sleep 10
-
       - name: Escaneo Dinámico de OWASP ZAP (DAST)
         uses: zaproxy/action-baseline@v0.12.0
         with:
-          target: "http://localhost:5000"
-          fail_action: false          # No fallar el pipeline si hay alertas
-          allow_issue_writing: false   # No intentar crear Issues en GitHub
+          target: "http://127.0.0.1:5000"
+          fail_action: false
+          allow_issue_writing: false
+          artifact_name: zap_reports
 
       # =============================
-      # ARTIFACTS DEL REPORTE ZAP
+      # PUBLICACIÓN DE REPORTES
       # =============================
       - name: Publicar Reportes OWASP ZAP
         uses: actions/upload-artifact@v4
@@ -94,7 +106,7 @@ jobs:
 
     steps:
       - name: Checkout del código
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Login en Docker Hub
         uses: docker/login-action@v2
