@@ -57,8 +57,8 @@ jobs:
       - name: Escaneo de Dependencias (Safety)
         run: safety check
 
-      #- name: Escaneo de Código Estático (Bandit)
-      #  run: bandit -r . -ll
+      - name: Escaneo de Código Estático (Bandit)
+        run: bandit -r . -ll
 
       # =============================
       # DAST - OWASP ZAP
@@ -67,7 +67,7 @@ jobs:
       - name: Escaneo Dinámico de OWASP ZAP (DAST)
         uses: zaproxy/action-baseline@v0.14.0
         with:
-          target: "http://0.0.0.0:5000"
+          target: "http://127.0.0.1:5000"
           cmd_options: '-a'
 
       # =============================
@@ -89,9 +89,11 @@ jobs:
   # ======================================
   build_and_push:
     name: Construir y Subir a Docker Hub
+    # Este trabajo SÓLO se ejecuta si security_scan es exitoso
     needs: security_scan 
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main'
+    # Este trabajo SÓLO se ejecuta en el branch 'main'
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
 
     steps:
       - name: Checkout del código
