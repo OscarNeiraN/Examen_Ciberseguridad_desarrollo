@@ -23,18 +23,32 @@ jobs:
         uses: actions/checkout@v3
 
       # =============================
-      # Construcción de la app Flask
+      # Construcción y Ejecución de la app Flask (DAST)
       # =============================
       - name: Build Docker App para DAST
         run: |
           docker build -t flask-app-dast-local .
 
-      - name: Ejecutar APP con network=host
+      - name: Ejecutar APP mapeando el puerto 5000
         run: |
-          docker run -d --network=host --name flask-app flask-app-dast-local
+          docker run -d -p 5000:5000 --name flask-app flask-app-dast-local
 
-      - name: Esperar que la app inicie
-        run: sleep 10
+      # AHORA USAMOS UN HEALTH CHECK ROBUSO PARA ESPERAR LA APP
+      - name: Esperar que la app inicie y esté lista para ZAP
+        timeout-minutes: 5 # Máximo 5 minutos para iniciar
+        run: |
+          echo "Esperando que la app Flask inicie en http://127.0.0.1:5000..."
+          for i in {1..30}; do # Intenta 30 veces (hasta 60 segundos)
+            # Verifica si el endpoint devuelve un código 200 (OK)
+            if curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:5000 | grep 200; then
+              echo "Aplicación iniciada exitosamente. Código 200 recibido."
+              exit 0
+            fi
+            echo "Intento $i/30 fallido. Esperando 2 segundos..."
+            sleep 2
+          done
+          echo "Error: La aplicación Flask no respondió después de 60 segundos. Fallando el job."
+          exit 1
 
       # =============================
       # SAST & SCA
@@ -57,7 +71,7 @@ jobs:
         run: bandit -r . -ll
 
       # =============================
-      # DAST - OWASP ZAP
+      # DAST - OWASP ZAP (Se ejecuta sólo cuando el health check es exitoso)
       # =============================
       - name: Escaneo Dinámico de OWASP ZAP (DAST)
         uses: zaproxy/action-baseline@v0.14.0
@@ -71,7 +85,9 @@ jobs:
       - name: Publicar Reportes OWASP ZAP
         uses: actions/upload-artifact@v4
         with:
-          name: zap_reports
+          name: zap-reports
+          fail_action: false
+          allow_issue_writing: false
           path: |
             report_json.json
             report_md.md
@@ -84,7 +100,7 @@ jobs:
     name: Construir y Subir a Docker Hub
     needs: security_scan 
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
 
     steps:
       - name: Checkout del código
