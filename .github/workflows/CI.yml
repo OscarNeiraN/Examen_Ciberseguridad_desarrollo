@@ -20,8 +20,8 @@ jobs:
     services:
       # Definimos el contenedor de la aplicación Flask
       flask_app:
-        # Usamos un tag temporal que coincida con el que construiremos
-        image: local-flask-temp:latest 
+        # Usamos un tag local simple ('flask-app-dast') que coincide con el build local
+        image: flask-app-dast
         options: --name flask-app-dast
         ports:
           - 5000:5000 # Mapeamos el puerto 5000 para el escaneo ZAP
@@ -30,17 +30,15 @@ jobs:
       - name: Checkout del código
         uses: actions/checkout@v3
 
-      - name: Configurar Docker Buildx
-        uses: docker/setup-buildx-action@v3
+      # Eliminamos el paso 'Configurar Docker Buildx' ya que no es necesario para un build local simple.
         
       # ----------------------------------------------------------------------
       # FASE 1: Construir la imagen y etiquetarla para el servicio
       # ----------------------------------------------------------------------
       - name: Construir Imagen Docker para DAST Service
-        # --- CORRECCIÓN ---
-        # Construimos la imagen con el tag 'local-flask-temp:latest' que
-        # coincide exactamente con el 'image' definido en 'services'
-        run: docker build -t local-flask-temp:latest . 
+        # --- CORRECCIÓN DE PULL ACCESS DENIED ---
+        # Construimos la imagen con el tag 'flask-app-dast' para que el servicio la encuentre.
+        run: docker build -t flask-app-dast . 
 
       # ----------------------------------------------------------------------
       # FASE 2: SAST (Bandit) y SCA (Safety)
