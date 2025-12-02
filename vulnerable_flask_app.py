@@ -26,8 +26,21 @@ app = Flask(__name__)
 # 4. CORRECCIÓN (CWE-614): Clave secreta generada en tiempo de ejecución.
 app.secret_key = os.urandom(24)
 
+
+
+
+
 # 3. CORRECCIÓN (CWE-352): Inicializar CSRFProtect para todas las rutas POST.
 csrf = CSRFProtect(app)
+
+
+
+
+
+
+
+
+
 
 # Configurar cookies seguras
 app.config.update(
@@ -44,10 +57,10 @@ Talisman(
         'default-src': ["'self'"],
         'script-src': ["'self'"],
         'style-src': ["'self'", "https://maxcdn.bootstrapcdn.com"],
-        'img-src': ["'self'", "data:"],                 # permitir imágenes embebidas si las hay
+        'img-src': ["'self'", "data:"],                 
         'font-src': ["'self'", "https://maxcdn.bootstrapcdn.com"],
         'connect-src': ["'self'"],
-        # directivas que no hacen fallback a default-src -> deben definirse explícitamente
+        # directivas que no hacen fallback a default-src, se definen explícitamente
         'form-action': ["'self'"],
         'frame-ancestors': ["'none'"],
         'base-uri': ["'self'"],
@@ -231,7 +244,7 @@ def dashboard():
     # 2. CORRECCIÓN (CWE-79): Cross-Site Scripting (XSS)
     comment_list_items = ""
     for comment in comments:
-        safe_comment = escape(comment['comment']) 
+        safe_comment =  escape(comment['comment']) # Escapar contenido para prevenir XSS
         comment_list_items += f'<li class="list-group-item">{safe_comment}</li>'
 
     return render_template_string(f'''
