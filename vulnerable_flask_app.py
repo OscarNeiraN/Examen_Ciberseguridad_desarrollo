@@ -42,7 +42,7 @@ csrf = CSRFProtect(app)
 
 
 
-# Configurar cookies seguras
+# Configurar cookies segurass
 app.config.update(
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE='Lax',
@@ -327,4 +327,4 @@ def admin():
 
 if __name__ == '__main__':
     init_db()
-    app.run(host="0.0.0.0", port=5000, debug=False)  # nosec
+    app.run(host="0.0.0.0", port=5000, debug=False)  # nosec 
