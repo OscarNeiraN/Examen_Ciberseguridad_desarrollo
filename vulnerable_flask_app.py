@@ -49,7 +49,7 @@ app.config.update(
     SESSION_COOKIE_SECURE=False  # False en desarrollo, True en producción con HTTPS
 )
 
-# 1. CORRECCIÓN (CWE-693): Content Security Policy ampliada para cubrir directivas sin fallback
+# 1. CORRECCIÓN (CWE-693): Content Security Policy ampliada para cubrir directivas sin fallbackjbjjj
 Talisman(
     app,
     content_security_policy={
